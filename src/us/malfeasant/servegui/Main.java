@@ -1,64 +1,96 @@
 package us.malfeasant.servegui;
 
+import java.awt.event.WindowAdapter;
+import java.awt.event.WindowEvent;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
-import java.lang.reflect.Constructor;
-import java.util.HashMap;
-import java.util.Map;
+import java.util.ArrayList;
 import java.util.Scanner;
+import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.FutureTask;
+import java.util.concurrent.LinkedBlockingQueue;
 
+import javax.swing.JFrame;
 import javax.swing.SwingUtilities;
 
 public class Main {
-	private static BufferedReader reader = new BufferedReader(new InputStreamReader(System.in));
+	private static final BlockingQueue<String> events = new LinkedBlockingQueue<>();
+	private static final ArrayList<Object> objects = new ArrayList<Object>();
 	private static Scanner scanner;
-	private static final Map<String, Object> objects = new HashMap<>();
 	private static boolean run = true;
 	private enum Command implements Runnable {
-		NEW {	// new [fq class name] id
+		FRAME_NEW {	// optional String title
 			@Override
 			public void run() {
-				String which = scanner.next();
-				String id = scanner.next();
-				if (objects.containsKey(id)) {
-					error("Id must be unique.");
-					return;
-				}
+				int index = objects.size();	// this will be the new object's index after it's added
+				String title = scanner.hasNext() ? scanner.nextLine() : "";
+				FutureTask<JFrame> task = new FutureTask<>(new Callable<JFrame>() {
+					@Override
+					public JFrame call() throws Exception {
+						JFrame frame = new JFrame(title);
+						frame.setDefaultCloseOperation(JFrame.DO_NOTHING_ON_CLOSE);
+						frame.addWindowListener(new WindowAdapter() {
+							@Override
+							public void windowClosing(WindowEvent arg0) {
+								events.add(index + " Close");
+							}
+						});
+						frame.setVisible(true);
+						return frame;
+					}
+				});
+				defer(task);
 				try {
-					Class<?> cl = Class.forName(which);
-					Constructor<?> con = cl.getConstructor();
-					FutureTask<Object> task = new FutureTask<>(new Callable<Object>() {
-						@Override
-						public Object call() throws Exception {
-							return con.newInstance();
+					objects.add(task.get());
+				} catch (InterruptedException | ExecutionException e) {
+					// TODO Auto-generated catch block
+					e.printStackTrace(System.err);
+					System.exit(-1);	// this should not happen
+				}
+				System.out.println(index);
+			}
+		},
+		FRAME_DISPOSE {	// index
+			@Override
+			public void run() {
+				if (scanner.hasNextInt()) {
+					int index = scanner.nextInt();
+					if (index < objects.size()) {
+						Object thing = objects.get(index);
+						if ((thing != null) && thing instanceof JFrame) {
+							JFrame frame = (JFrame) thing;
+							SwingUtilities.invokeLater(() -> frame.dispose());
+							objects.set(index, null);
+							System.out.println("Ok.");
+						} else {
+							error("Object " + index + " is not a Frame.");
 						}
-					});
-					defer(task);
-					objects.put(id, task.get());
-					System.out.println("Ok: " + id);
-				} catch (ClassNotFoundException e) {
-					error("Class not found: " + which);
-					return;
-				} catch (NoSuchMethodException e) {
-					error("Class " + which + " does not have a no-arg constructor.");
-					return;
-				} catch (SecurityException | IllegalArgumentException | InterruptedException | ExecutionException e) {
-					// doubt any of these will happen...
-					e.printStackTrace();
+					} else {
+						error("Invalid index.");
+					}
+				} else {
+					error("Missing frame index.");
 				}
 			}
 		},
-		CALL {	// call slot method args
+		POLL {
 			@Override
 			public void run() {
-				String slot = scanner.next();
-				Object obj = objects.get(slot);
-				if (obj == null) {
-					error("Slot " + slot + " not found");
+				System.out.println(events.isEmpty() ? "-1" : events.poll());
+			}
+		},
+		WAIT {
+			@Override
+			public void run() {
+				try {
+					System.out.println(events.take());
+				} catch (InterruptedException e) {
+					// TODO Auto-generated catch block
+					e.printStackTrace();
+					System.exit(-1);	// this should not happen
 				}
 			}
 		},
@@ -90,6 +122,7 @@ public class Main {
 		}
 	}
 	public static void main(String[] args) {
+		BufferedReader reader = new BufferedReader(new InputStreamReader(System.in));
 		while (run) {
 			try {
 				scanner = new Scanner(reader.readLine());
@@ -98,7 +131,9 @@ public class Main {
 				e.printStackTrace(System.err);
 				continue;
 			}
-			Command.recognize(scanner.next());
+			if (scanner.hasNext()) {	// in case of blank line, or otherwise nothing but whitespace...
+				Command.recognize(scanner.next());
+			}
 		}
 		System.out.println("Shutting down.");
 	}

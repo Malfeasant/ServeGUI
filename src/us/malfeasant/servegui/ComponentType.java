@@ -3,7 +3,9 @@ package us.malfeasant.servegui;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
 
+import javax.swing.JComponent;
 import javax.swing.JFrame;
+import javax.swing.JLabel;
 
 public enum ComponentType {
 	FRAME {
@@ -26,7 +28,22 @@ public enum ComponentType {
 			JFrame frame = (JFrame) o;
 			frame.dispose();
 		}
+		@Override
+		void add(Object parent, JComponent child) {
+			((JFrame) parent).add(child);
+		}
+	},
+	LABEL {
+		@Override
+		ComponentWrapper makeNew(int index, String text) {
+			return new ComponentWrapper(LABEL, new JLabel(text));
+		}
 	};
 	abstract ComponentWrapper makeNew(int index, String text);
-	abstract void dispose(Object o);
+	void dispose(ComponentWrapper comp) {	// should work for almost everything, others will override
+		((JComponent) comp.component).getParent().remove(comp);
+	}
+	void add(Object parent, JComponent child) {
+		((JComponent) parent).add( child);
+	}
 }

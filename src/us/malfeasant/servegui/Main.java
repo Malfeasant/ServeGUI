@@ -11,7 +11,10 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.FutureTask;
 import java.util.concurrent.LinkedBlockingQueue;
 
+import javax.swing.JComponent;
 import javax.swing.SwingUtilities;
+
+import com.sun.xml.internal.ws.api.pipe.NextAction;
 
 public class Main {
 	static final BlockingQueue<String> events = new LinkedBlockingQueue<>();
@@ -43,22 +46,31 @@ public class Main {
 		DISPOSE {	// index
 			@Override
 			public void run() {
-				if (scanner.hasNextInt()) {
-					int index = scanner.nextInt();
-					if (index < objects.size()) {
-						ComponentWrapper wrapper = objects.get(index);
-						if (wrapper != null) {
-							SwingUtilities.invokeLater(() -> wrapper.type.dispose(wrapper.component));
-							objects.set(index, null);
-							System.out.println("Ok.");
-						} else {
-							error("Object " + index + " already disposed.");
-						}
+				int index = nextComponentIndex();
+				if (index < 0) error("Bad index.");
+				else {
+					ComponentWrapper wrapper = objects.get(index);
+					SwingUtilities.invokeLater(() -> wrapper.type.dispose(wrapper.component));
+					objects.set(index, null);
+					System.out.println("Ok.");
+				}
+			}
+		},
+		ADD {	// index of parent, index of child
+			@Override
+			public void run() {
+				int parent = nextComponentIndex();
+				int child = nextComponentIndex();
+				if (parent < 0 || child < 0) error("Bad index.");
+				else {
+					ComponentWrapper parentWrapper = objects.get(parent);
+					ComponentWrapper childWrapper = objects.get(child);
+					if (childWrapper.component instanceof JComponent) {
+						SwingUtilities.invokeLater(
+								() -> parentWrapper.type.add(parentWrapper.component, childWrapper.component));
 					} else {
-						error("Invalid index.");
+						error("Only Components can be added.");
 					}
-				} else {
-					error("Missing frame index.");
 				}
 			}
 		},
@@ -97,6 +109,15 @@ public class Main {
 		};
 		void defer(Runnable r) {
 			SwingUtilities.invokeLater(r);
+		}
+		int nextComponentIndex() {
+			if (scanner.hasNextInt()) {
+				int index = scanner.nextInt();
+				if (index < objects.size()) {
+					if (objects.get(index) != null) return index;
+				}
+			}
+			return -1;
 		}
 	}
 	static void error(String e) {
